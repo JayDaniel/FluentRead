@@ -63,4 +63,5 @@ export const _service: ServiceMap = {
     [services.siliconCloud]: common,
     [services.openrouter]: common,
     [services.grok]: common,
+    [services.sophon]: common,
 }

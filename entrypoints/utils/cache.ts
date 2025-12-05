@@ -2,6 +2,8 @@ import { customModelString } from "./option";
 import { config } from "@/entrypoints/utils/config";
 
 const prefix = "flcache_"; // fluent read cache
+const MAX_CACHE_ITEMS = 500; // 简单上限，避免 localStorage 占用过大
+const MAX_PRUNE_BATCH = 50; // 一次最多清理条目数，避免长阻塞
 
 // 构建缓存 key
 function buildKey(message: string) {
@@ -29,6 +31,7 @@ export const cache = {
         if (!config.useCache) return;
         
         localStorage.setItem(buildKey(key), value);
+        enforceCacheLimit();
     },
 
     localSetDual(key: string, value: string) {
@@ -76,8 +79,35 @@ export const cache = {
         }
         // 批量删除
         keysToDelete.forEach(key => localStorage.removeItem(key));
+    },
+
+    // 根据上限清理缓存，超出则删除最早写入的部分键
+    enforceLimit() {
+        try {
+            const keys = [];
+            for (let i = 0; i < localStorage.length; i++) {
+                const k = localStorage.key(i);
+                if (k && k.startsWith(prefix)) {
+                    keys.push(k);
+                }
+            }
+            if (keys.length <= MAX_CACHE_ITEMS) return;
+            // localStorage 无序，只能按键名排序作为近似 FIFO
+            keys.sort();
+            const over = Math.min(keys.length - MAX_CACHE_ITEMS, MAX_PRUNE_BATCH);
+            for (let i = 0; i < over; i++) {
+                localStorage.removeItem(keys[i]);
+            }
+        } catch (e) {
+            // 忽略清理异常，避免影响主流程
+        }
     }
 };
+
+// 对外暴露轻量的清理入口，避免多处直接访问内部实现
+function enforceCacheLimit() {
+    cache.enforceLimit();
+}
 
 // 用于节点序列化
 export function stringifyNode(node: any): string {

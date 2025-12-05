@@ -17,6 +17,10 @@ function getMaxConcurrentTranslations(): number {
   return config.maxConcurrentTranslations || 6; // 默认值为6
 }
 
+function getMaxQueueLength(): number {
+  return getMaxConcurrentTranslations() * 3;
+}
+
 /**
  * 添加翻译任务到队列
  * @param translationTask 翻译任务函数, 需要返回Promise
@@ -49,6 +53,11 @@ export function enqueueTranslation<T>(translationTask: () => Promise<T>): Promis
       activeTranslations++;
       taskWrapper();
     } else {
+      // 如果队列已满，立即拒绝，避免内存占用过大
+      if (pendingTranslations.length >= getMaxQueueLength()) {
+        reject(new Error('翻译队列已满，请稍后重试'));
+        return;
+      }
       pendingTranslations.push(taskWrapper);
     }
   });
@@ -101,6 +110,5 @@ export function getQueueStatus() {
  */
 export function canAcceptMoreTasks(): boolean {
   // 如果等待队列太长，返回false表示需要暂停扫描
-  const MAX_QUEUE_LENGTH = getMaxConcurrentTranslations() * 3;
-  return pendingTranslations.length < MAX_QUEUE_LENGTH;
+  return pendingTranslations.length < getMaxQueueLength();
 }

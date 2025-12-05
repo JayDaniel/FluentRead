@@ -370,15 +370,39 @@
       </el-col>
     </el-row>
 
-    <!--  模型 -->
+    <!--  动态模型选择器 -->
     <el-row v-show="compute.showModel" class="margin-bottom margin-left-2em">
       <el-col :span="12" class="lightblue rounded-corner">
         <span class="popup-text popup-vertical-left">模型</span>
       </el-col>
       <el-col :span="12">
-        <el-select v-model="config.model[config.service]" placeholder="请选择模型">
-          <el-option class="select-left" v-for="item in compute.model" :key="item" :label="item" :value="item" />
-        </el-select>
+        <div class="model-selector-container">
+          <el-select 
+            v-model="config.model[config.service]" 
+            placeholder="请选择模型"
+            :loading="isLoadingModels"
+            style="width: calc(100% - 30px); margin-right: 8px;"
+          >
+            <el-option 
+              v-for="item in compute.model" 
+              :key="item" 
+              :label="item" 
+              :value="item" 
+            />
+          </el-select>
+          <el-button 
+            v-if="hasDynamicProvider && config.token[config.service]"
+            :icon="Refresh"
+            circle
+            size="small"
+            :loading="isLoadingModels"
+            @click="refreshModels"
+            title="刷新模型列表"
+          />
+        </div>
+        <div v-if="modelError" class="error-text">
+          {{ modelError }}
+        </div>
       </el-col>
     </el-row>
 
@@ -664,7 +688,7 @@
 
 // Main 处理配置信息
 import { computed, ref, watch, onUnmounted } from 'vue'
-import { models, options, servicesType, defaultOption } from "../entrypoints/utils/option";
+import { models, options, servicesType, services, defaultOption } from "../entrypoints/utils/option";
 import { Config } from "@/entrypoints/utils/model";
 import { storage } from '@wxt-dev/storage';
 import { ChatDotRound, Refresh, Edit, Upload, Download } from '@element-plus/icons-vue'
@@ -673,6 +697,7 @@ import browser from 'webextension-polyfill';
 import { defineAsyncComponent } from 'vue';
 const CustomHotkeyInput = defineAsyncComponent(() => import('@/components/CustomHotkeyInput.vue'));
 import { parseHotkey } from '@/entrypoints/utils/hotkey';
+import { modelService } from '@/entrypoints/utils/modelService';
 
 // 初始化深色模式媒体查询
 const darkModeMediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
@@ -693,6 +718,12 @@ function updateTheme(theme: string) {
 
 // 配置信息
 let config = ref(new Config());
+
+// 动态模型相关
+const isLoadingModels = ref(false);
+const modelError = ref('');
+const dynamicModels = ref<string[]>([]);
+const hasDynamicProvider = computed(() => modelService.hasProvider(config.value.service));
 
 // 从 storage 中获取本地配置
 storage.getItem('local:config').then((value: any) => {
@@ -716,6 +747,78 @@ storage.watch('local:config', (newValue: any, oldValue: any) => {
   }
 });
 
+// 动态模型获取相关方法
+async function loadDynamicModels() {
+  // 重置错误和加载状态
+  modelError.value = '';
+  
+  // 仅对支持动态获取的服务并且有Token时尝试拉取
+  if (hasDynamicProvider.value && config.value.token[config.value.service]) {
+    try {
+      isLoadingModels.value = true;
+      const list = await modelService.getDynamicModels(
+        config.value.service,
+        config.value.token[config.value.service]
+      );
+
+      dynamicModels.value = list;
+      
+      // 如果当前选择的模型不在新列表中，选择第一个
+      if (!dynamicModels.value.includes(config.value.model[config.value.service]) && dynamicModels.value.length > 0) {
+        config.value.model[config.value.service] = dynamicModels.value[0];
+      }
+    } catch (error) {
+      console.warn('Failed to fetch dynamic models, using local preset:', error);
+      modelError.value = '获取模型列表失败，使用本地预设';
+      dynamicModels.value = []; // 清空动态模型，使用本地预设
+    } finally {
+      isLoadingModels.value = false;
+    }
+  } else {
+    // 非硅基流动服务或没有API密钥，清空动态模型（使用本地预设）
+    dynamicModels.value = [];
+  }
+}
+
+async function refreshModels() {
+  if (!hasDynamicProvider.value || !config.value.token[config.value.service]) {
+    return;
+  }
+  
+  try {
+    isLoadingModels.value = true;
+    modelError.value = '';
+    
+    const list = await modelService.refreshModels(
+      config.value.service,
+      config.value.token[config.value.service]
+    );
+    dynamicModels.value = list;
+  } catch (error) {
+    modelError.value = '刷新失败，请检查API密钥和网络连接';
+    console.error('Failed to refresh models:', error);
+  } finally {
+    isLoadingModels.value = false;
+  }
+}
+
+// 监听服务变化和API密钥变化
+watch(() => [config.value.service, config.value.token[config.value.service]], () => {
+  loadDynamicModels();
+}, { immediate: true });
+
+// 组件挂载时加载模型
+storage.getItem('local:config').then((value: any) => {
+  if (typeof value === 'string' && value) {
+    const parsedConfig = JSON.parse(value);
+    Object.assign(config.value, parsedConfig);
+  }
+  // 初始应用主题
+  updateTheme(config.value.theme || 'auto');
+  // 加载动态模型
+  loadDynamicModels();
+});
+
 // 监听菜单栏配置变化
 // 当配置发生改变时,将新的配置序列化为 JSON 字符串并保存到 storage 中
 // deep: true 表示深度监听对象内部属性的变化
@@ -728,39 +831,44 @@ watch(config, (newValue: any, oldValue: any) => {
 let compute = ref({
   // 1、是否是AI服务
   showAI: computed(() => servicesType.isAI(config.value.service)),
-  // 2、是否是机器翻译
-  showMachine: computed(() => servicesType.isMachine(config.value.service)),
-  // 3、是否显示代理
-  showProxy: computed(() => servicesType.isUseProxy(config.value.service)),
-  // 4、是否显示模型
-  showModel: computed(() => servicesType.isUseModel(config.value.service)),
-  // 5、是否显示token
+  // 2、是否需要token
   showToken: computed(() => servicesType.isUseToken(config.value.service)),
-  // 6、是否显示 AkSk
-  showAkSk: computed(() => servicesType.isUseAkSk(config.value.service)),
-  // 6.5、是否显示有道翻译配置
-  showYoudao: computed(() => servicesType.isYoudao(config.value.service)),
-  // 6.6、是否显示腾讯云机器翻译配置
-  showTencent: computed(() => servicesType.isTencent(config.value.service)),
-  // 7、获取模型列表
-  model: computed(() => models.get(config.value.service) || []),
-  // 8、是否需要自定义接口
-  showCustom: computed(() => servicesType.isCustom(config.value.service)),
-  // 9、是否显示 DeepLX URL 配置
-  showDeepLX: computed(() => config.value.service === 'deeplx'),
-  // 10、是否自定义模型
-  showCustomModel: computed(() => servicesType.isAI(config.value.service) && config.value.model[config.value.service] === "自定义模型"),
-  // 11、判断是否为"双语模式"，控制一些翻译服务的显示
-  filteredServices: computed(() => options.services.filter((service: any) =>
-    !([service.google].includes(service.value) && config.value.display !== 1))
-  ),
-  // 12、判断是否为 coze
-  showRobotId: computed(() => servicesType.isCoze(config.value.service)),
-  // 13、是否显示New API配置
-  showNewAPI: computed(() => servicesType.isNewApi(config.value.service)),
-  // 14、是否显示Azure OpenAI端点配置
+  // 3、是否需要model
+  showModel: computed(() => servicesType.isUseModel(config.value.service)),
+  // 4、是否需要自定义模型
+  showCustomModel: computed(() => config.value.service === services.custom || config.value.service === services.doubao),
+  // 5、是否需要自定义URL
+  showCustom: computed(() => servicesType.isUseCustomUrl(config.value.service)),
+  // 6、是否需要代理
+  showProxy: computed(() => servicesType.isUseProxy(config.value.service)),
+  // 7、是否是Azure OpenAI
   showAzureOpenaiEndpoint: computed(() => servicesType.isAzureOpenai(config.value.service)),
-})
+  // 8、是否是DeepLX
+  showDeepLX: computed(() => config.value.service === services.deeplx),
+  // 9、是否是有道
+  showYoudao: computed(() => servicesType.isYoudao(config.value.service)),
+  // 10、是否是腾讯云
+  showTencent: computed(() => servicesType.isTencent(config.value.service)),
+  // 11、是否是Coze
+  showRobotId: computed(() => servicesType.isCoze(config.value.service)),
+  // 12、是否是NewAPI
+  showNewAPI: computed(() => servicesType.isNewApi(config.value.service)),
+  // 13、是否是AkSk
+  showAkSk: computed(() => servicesType.isUseAkSk(config.value.service)),
+  // 14、过滤后的服务列表
+  filteredServices: computed(() => options.services),
+  // 15、模型列表 - 优先使用动态模型，否则使用本地预设
+  model: computed(() => {
+    // 如果当前服务支持动态模型且有API密钥，使用动态模型
+    if (hasDynamicProvider.value && config.value.token[config.value.service] && dynamicModels.value.length > 0) {
+      return dynamicModels.value;
+    }
+    // 其他服务使用本地预设模型列表
+    return models.get(config.value.service) || ["自定义模型"];
+  }),
+  // 刷新按钮可见性
+  showRefreshButton: computed(() => hasDynamicProvider.value && config.value.token[config.value.service])
+});
 
 // 监听主题变化
 watch(() => config.value.theme, (newTheme) => {
@@ -1594,9 +1702,18 @@ const validateConfig = (configData: any): boolean => {
 }
 
 .error-text {
-  color: var(--el-color-danger);
+  color: #e74c3c;
   font-size: 12px;
   margin-top: 4px;
-  line-height: 1.4;
+}
+
+.model-selector-container {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.custom-hotkey-row {
+  margin-bottom: 48px;
 }
 </style>

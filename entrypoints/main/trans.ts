@@ -8,6 +8,7 @@ import { detectlang, throttle } from "@/entrypoints/utils/common";
 import { getMainDomain, replaceCompatFn } from "@/entrypoints/main/compat";
 import { config } from "@/entrypoints/utils/config";
 import { translateText, cancelAllTranslations } from '@/entrypoints/utils/translateApi';
+import { canAcceptMoreTasks } from '@/entrypoints/utils/translateQueue';
 
 let hoverTimer: any; // 鼠标悬停计时器
 let htmlSet = new Set(); // 防抖
@@ -38,6 +39,7 @@ export function restoreOriginalContent() {
             
             // 移除可能添加的翻译相关类
             node.classList.remove('fluent-read-bilingual');
+            node.classList.remove('fluent-read-translated'); // Add this line
         }
     });
     
@@ -72,6 +74,29 @@ export function restoreOriginalContent() {
     // 7. 消除可能存在的全局样式污染
     const tempStyleElements = document.querySelectorAll('style[data-fr-temp-style]');
     tempStyleElements.forEach(el => el.remove());
+}
+
+// 分批注册节点，避免大批量同步阻塞
+function observeNodesInBatches(nodes: Element[], batchSize = 200) {
+    let index = 0;
+    const schedule = () => {
+        const batch = nodes.slice(index, index + batchSize);
+        batch.forEach(node => scheduleObserve(node));
+        index += batchSize;
+        if (index < nodes.length) {
+            setTimeout(schedule, 0);
+        }
+    };
+    schedule();
+}
+
+// 根据队列压力决定是否立刻注册观察，若队列满则延迟
+function scheduleObserve(node: Element, retryDelay = 500) {
+    if (canAcceptMoreTasks()) {
+        observer?.observe(node);
+    } else {
+        setTimeout(() => scheduleObserve(node, Math.min(retryDelay + 200, 2000)), retryDelay);
+    }
 }
 
 // 自动翻译整个页面的功能
@@ -133,9 +158,7 @@ export function autoTranslateEnglishPage() {
     });
 
     // 开始观察所有节点
-    nodes.forEach(node => {
-        observer?.observe(node);
-    });
+    observeNodesInBatches(nodes);
 
     // 创建 MutationObserver 监听 DOM 变化
     mutationObserver = new MutationObserver((mutations) => {
@@ -145,10 +168,10 @@ export function autoTranslateEnglishPage() {
             mutation.addedNodes.forEach(node => {
                 if (node.nodeType === 1) { // 元素节点
                     // 只处理未翻译的新节点
-                    const newNodes = grabAllNode(node as Element).filter(
-                        n => !n.hasAttribute(TRANSLATED_ATTR)
-                    );
-                    newNodes.forEach(n => observer?.observe(n));
+                    const newNodes = grabAllNode(node as Element)
+                        .filter(n => !n.hasAttribute(TRANSLATED_ATTR))
+                        .slice(0, 200); // 避免一次性注册过多节点
+                    newNodes.forEach(n => scheduleObserve(n));
                 }
             });
         });

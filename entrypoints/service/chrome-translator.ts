@@ -15,19 +15,17 @@ async function translateWithOffscreen(message: any): Promise<any> {
 
         // 向 offscreen 文档发送翻译请求
         const response = await new Promise((resolve, reject) => {
-            chrome.runtime.sendMessage({
+            browser.runtime.sendMessage({
                 type: 'CHROME_TRANSLATE_OFFSCREEN',
                 data: {
                     text: message.origin,
                     from: config.from,
                     to: config.to
                 }
-            }, (response: any) => {
-                if (chrome.runtime.lastError) {
-                    reject(new Error(chrome.runtime.lastError.message));
-                } else {
-                    resolve(response);
-                }
+            }).then((response: any) => {
+                resolve(response);
+            }).catch((error: any) => {
+                reject(new Error(error.message));
             });
         });
 
@@ -52,7 +50,7 @@ async function translateWithOffscreen(message: any): Promise<any> {
 async function ensureOffscreenDocument() {
     try {
         // 检查是否已经有 offscreen 文档
-        const existingContexts = await chrome.runtime.getContexts({
+        const existingContexts = await browser.runtime.getContexts({
             contextTypes: ['OFFSCREEN_DOCUMENT']
         });
 
@@ -61,7 +59,7 @@ async function ensureOffscreenDocument() {
         }
 
         // 创建 offscreen 文档
-        await chrome.offscreen.createDocument({
+        await browser.offscreen.createDocument({
             url: 'offscreen.html',
             reasons: ['DOM_SCRAPING'], // 使用 DOM_SCRAPING 原因来访问 Translation API
             justification: 'Chrome Translation API requires DOM context'

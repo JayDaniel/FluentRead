@@ -116,6 +116,9 @@ const debounceTimer = ref<number | null>(null); // 防抖定时器
 const currentPlayingText = ref(''); // 当前正在播放的文本
 const isFirefox = ref(false); // 是否为Firefox浏览器
 const isDarkTheme = ref(false); // 主题状态
+const lastTranslatedText = ref(''); // 最近一次翻译的原文
+const lastTranslatedResult = ref(''); // 最近一次翻译结果
+let currentRequestId = 0; // 用于丢弃过期的翻译请求
 
 // 计算小红点指示器的样式
 const indicatorStyle = computed(() => {
@@ -176,9 +179,8 @@ const handleTextSelection = () => {
       return;
     }
     
-    // 如果选中的文本与上次相同，重新显示指示器（避免因为相同文本而不显示的问题）
+    // 如果选中的文本与上次相同，直接返回（避免重复翻译）
     if (selectedTextContent === lastSelectedText.value) {
-      // 重新显示指示器，但不重新获取翻译
       const range = selection.getRangeAt(0);
       const rect = range.getBoundingClientRect();
       selectionRect.value = rect;
@@ -276,19 +278,40 @@ const closeTooltip = () => {
 // 获取翻译结果
 const getTranslation = async () => {
   if (!selectedText.value) return;
+
+  // 文本过长直接提示，避免阻塞
+  const maxTextLength = 4096;
+  if (selectedText.value.length > maxTextLength) {
+    error.value = '选中文本过长，已忽略';
+    return;
+  }
+
+  // 如果和上次翻译的文本相同且已有结果，直接复用
+  if (selectedText.value === lastTranslatedText.value && lastTranslatedResult.value) {
+    translationResult.value = lastTranslatedResult.value;
+    error.value = '';
+    return;
+  }
   
+  const requestId = ++currentRequestId;
   isLoading.value = true;
   error.value = '';
   
   try {
-    // 使用当前配置的翻译服务进行翻译
-    const result = await translateText(selectedText.value);
+    const result = await translateText(selectedText.value, document.title, { timeout: 20000 });
+    if (requestId !== currentRequestId) return; // 已有新请求，丢弃过期结果
     translationResult.value = result;
+    lastTranslatedText.value = selectedText.value;
+    lastTranslatedResult.value = result;
   } catch (err) {
-    error.value = '翻译失败，请重试';
+    if (requestId !== currentRequestId) return;
+    const message = err instanceof Error ? err.message : '翻译失败，请重试';
+    error.value = message || '翻译失败，请重试';
     console.error('Translation error:', err);
   } finally {
-    isLoading.value = false;
+    if (requestId === currentRequestId) {
+      isLoading.value = false;
+    }
   }
 };
 
@@ -588,10 +611,8 @@ onMounted(() => {
   // 监听翻译显示状态的变化
   watch(showTooltip, async (newValue: boolean) => {
     if (newValue) {
-      // 当显示弹窗时，加载翻译结果
       await getTranslation();
     } else if (isPlaying.value) {
-      // 当关闭弹窗时，停止播放
       stopAudio();
     }
   });

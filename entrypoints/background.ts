@@ -58,34 +58,43 @@ export default defineBackground({
         safari: false,
     },
     main() {
-        // 创建右键菜单项
-        try {
-            // 创建父菜单
-            browser.contextMenus.create({
-                id: 'fluentread-parent',
-                title: 'FluentRead',
-                contexts: ['page', 'selection'],
-            });
-            
-            // 创建全文翻译子菜单
-            browser.contextMenus.create({
-                id: CONTEXT_MENU_IDS.TRANSLATE_FULL_PAGE,
-                title: '全文翻译',
-                parentId: 'fluentread-parent',
-                contexts: ['page', 'selection'],
-            });
-            
-            // 创建撤销翻译子菜单
-            browser.contextMenus.create({
-                id: CONTEXT_MENU_IDS.RESTORE_ORIGINAL,
-                title: '撤销翻译',
-                parentId: 'fluentread-parent',
-                contexts: ['page', 'selection'],
-                enabled: false, // 初始状态为禁用
-            });
-        } catch (error) {
-            console.error('Error setting up context menu:', error);
-        }
+        // 创建右键菜单项（先清理再创建，避免重复ID错误）
+        const setupContextMenus = async () => {
+            try {
+                await browser.contextMenus.removeAll();
+            } catch (e) {
+                // 忽略清理过程中的错误
+            }
+
+            try {
+                // 创建父菜单
+                browser.contextMenus.create({
+                    id: 'fluentread-parent',
+                    title: 'FluentRead',
+                    contexts: ['page', 'selection'],
+                });
+
+                // 创建全文翻译子菜单
+                browser.contextMenus.create({
+                    id: CONTEXT_MENU_IDS.TRANSLATE_FULL_PAGE,
+                    title: '全文翻译',
+                    parentId: 'fluentread-parent',
+                    contexts: ['page', 'selection'],
+                });
+
+                // 创建撤销翻译子菜单
+                browser.contextMenus.create({
+                    id: CONTEXT_MENU_IDS.RESTORE_ORIGINAL,
+                    title: '撤销翻译',
+                    parentId: 'fluentread-parent',
+                    contexts: ['page', 'selection'],
+                    enabled: false, // 初始状态为禁用
+                });
+            } catch (error) {
+                console.error('Error setting up context menu:', error);
+            }
+        };
+        void setupContextMenus();
 
         // 监听右键菜单点击事件
         browser.contextMenus.onClicked.addListener((info: any, tab: any) => {
@@ -169,8 +178,13 @@ export default defineBackground({
                         return;
                     }
                     
-                    // 处理普通翻译请求
-                    _service[config.service](message)
+                    // 处理普通翻译请求，增加服务名校验
+                    const serviceFn = _service[config.service];
+                    if (!serviceFn) {
+                        resolve({ success: false, error: '无效的翻译服务配置，请检查设置' });
+                        return;
+                    }
+                    serviceFn(message)
                         .then(resp => resolve(resp))    // 成功
                         .catch(error => reject(error)); // 失败
                 } catch (error) {

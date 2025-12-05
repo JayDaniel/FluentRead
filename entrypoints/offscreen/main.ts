@@ -211,7 +211,9 @@ async function handleTranslationRequest(data: any): Promise<string> {
 }
 
 // 监听来自 background script 的消息
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+import browser from 'webextension-polyfill';
+
+browser.runtime.onMessage.addListener((message: any, sender: any, sendResponse: any) => {
     // console.log('Offscreen 收到消息:', message);
     
     if (message.type === 'CHROME_TRANSLATE_OFFSCREEN') {
@@ -224,11 +226,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 console.error('Offscreen 翻译失败:', error);
                 sendResponse({ success: false, error: error.message });
             });
-        
+
         return true; // 保持消息通道开放以支持异步响应
     }
-    
-    return false;
+    // 为满足类型定义并保持消息通道，可统一返回 true
+    return true;
 });
 
 // 初始化检查

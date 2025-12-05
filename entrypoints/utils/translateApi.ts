@@ -13,6 +13,41 @@ import { storage } from '@wxt-dev/storage';
 // 调试相关
 const isDev = process.env.NODE_ENV === 'development';
 
+// 记录正在进行的翻译任务，避免同一文本重复请求
+const inFlightTranslations = new Map<string, Promise<string>>();
+
+// 计数持久化节流
+let pendingCountSave = false;
+function scheduleCountPersist() {
+  if (pendingCountSave) return;
+  pendingCountSave = true;
+  setTimeout(() => {
+    pendingCountSave = false;
+    storage.setItem('local:config', JSON.stringify(config)).catch(() => {
+      /* 忽略计数持久化异常，避免阻断流程 */
+    });
+  }, 800); // 轻量延迟，批量写入
+}
+
+function buildTranslationKey(origin: string, context: string): string {
+  const model = config.model?.[config.service] ?? '';
+  return `${config.service}::${model}::${config.to}::${context}::${origin}`;
+}
+
+function toUserFriendlyError(error: unknown): Error {
+  const message = error instanceof Error ? error.message : String(error);
+  if (message.includes('超时') || message.toLowerCase().includes('timeout')) {
+    return new Error('翻译请求超时，请稍后重试');
+  }
+  if (message.includes('401') || /unauthorized/i.test(message)) {
+    return new Error('翻译服务鉴权失败，请检查密钥或配置');
+  }
+  if (message.includes('429') || /rate limit/i.test(message)) {
+    return new Error('翻译服务限流，请稍后再试');
+  }
+  return new Error(message || '翻译失败，请稍后重试');
+}
+
 /**
  * 翻译API的统一入口
  * 所有翻译请求都应该通过此函数发送，以便集中管理队列和重试逻辑
@@ -46,13 +81,20 @@ export async function translateText(origin: string, context: string = document.t
     }
   }
 
-  // 增加翻译计数
-  config.count++;
-  // 保存配置以确保计数持久化
-  storage.setItem('local:config', JSON.stringify(config));
+  const translationKey = buildTranslationKey(origin, context);
+
+  // 如果已有同一请求进行中，复用该 Promise，减少重复调用
+  const existingTask = inFlightTranslations.get(translationKey);
+  if (existingTask) {
+    return existingTask;
+  }
 
   // 使用队列处理翻译请求
-  return enqueueTranslation(async () => {
+  const translationPromise = enqueueTranslation(async () => {
+    // 仅在真正发起新请求时增加计数
+    config.count++;
+    scheduleCountPersist();
+
     // 创建翻译任务
     const translationTask = async (retryCount: number = 0): Promise<string> => {
       try {
@@ -88,12 +130,19 @@ export async function translateText(origin: string, context: string = document.t
         }
         
         // 超过最大重试次数，抛出异常
-        throw error;
+        throw toUserFriendlyError(error);
       }
     };
 
     // 开始执行翻译任务
     return translationTask();
+  });
+
+  // 任务入表，便于后续复用/清理
+  inFlightTranslations.set(translationKey, translationPromise);
+
+  return translationPromise.finally(() => {
+    inFlightTranslations.delete(translationKey);
   });
 }
 
