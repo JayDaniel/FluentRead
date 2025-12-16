@@ -23,6 +23,7 @@
     "crypto-js": "^4.2.0",
     "element-plus": "^2.9.3",
     "franc-min": "^6.2.0",
+    "idb": "^8.0.3",
     "js-beautify": "^1.15.1",
     "webextension-polyfill": "^0.12.0"
   },

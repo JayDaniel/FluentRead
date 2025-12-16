@@ -3,7 +3,7 @@
  * 整合翻译队列管理，作为翻译函数和后台翻译服务之间的中间层
  */
 
-import { enqueueTranslation, clearTranslationQueue, getQueueStatus } from './translateQueue';
+import { enqueueTranslation, clearTranslationQueue, getQueueStatus, cancelAllTranslations as cancelQueue, type Priority } from './translateQueue';
 import browser from 'webextension-polyfill';
 import { config } from './config';
 import { cache } from './cache';
@@ -12,9 +12,6 @@ import { storage } from '@wxt-dev/storage';
 
 // 调试相关
 const isDev = process.env.NODE_ENV === 'development';
-
-// 记录正在进行的翻译任务，避免同一文本重复请求
-const inFlightTranslations = new Map<string, Promise<string>>();
 
 // 计数持久化节流
 let pendingCountSave = false;
@@ -57,12 +54,17 @@ function toUserFriendlyError(error: unknown): Error {
  * @param options 翻译选项
  * @returns 翻译结果的Promise
  */
-export async function translateText(origin: string, context: string = document.title, options: TranslateOptions = {}): Promise<string> {
+export async function translateText(
+  origin: string,
+  context: string = document.title,
+  options: TranslateOptions = {}
+): Promise<string> {
   const {
-    maxRetries = 3, 
-    retryDelay = 1000, 
+    maxRetries = 3,
+    retryDelay = 1000,
     timeout = 45000,
     useCache = config.useCache,
+    priority = 'normal',
   } = options;
 
   // 如果目标语言与当前文本语言相同，直接返回原文
@@ -83,13 +85,7 @@ export async function translateText(origin: string, context: string = document.t
 
   const translationKey = buildTranslationKey(origin, context);
 
-  // 如果已有同一请求进行中，复用该 Promise，减少重复调用
-  const existingTask = inFlightTranslations.get(translationKey);
-  if (existingTask) {
-    return existingTask;
-  }
-
-  // 使用队列处理翻译请求
+  // 使用队列处理翻译请求（去重由队列模块处理）
   const translationPromise = enqueueTranslation(async () => {
     // 仅在真正发起新请求时增加计数
     config.count++;
@@ -101,7 +97,7 @@ export async function translateText(origin: string, context: string = document.t
         // 发送翻译请求给background脚本处理
         const result = await Promise.race([
           browser.runtime.sendMessage({ context, origin }),
-          new Promise<never>((_, reject) => 
+          new Promise<never>((_, reject) =>
             setTimeout(() => reject(new Error('翻译请求超时')), timeout)
           )
         ]) as string;
@@ -123,12 +119,12 @@ export async function translateText(origin: string, context: string = document.t
           if (isDev) {
             console.log(`[翻译API] 翻译失败，${retryCount + 1}/${maxRetries} 次重试，原因:`, error);
           }
-          
+
           // 等待一段时间后重试
           await new Promise(resolve => setTimeout(resolve, retryDelay));
           return translationTask(retryCount + 1);
         }
-        
+
         // 超过最大重试次数，抛出异常
         throw toUserFriendlyError(error);
       }
@@ -136,14 +132,12 @@ export async function translateText(origin: string, context: string = document.t
 
     // 开始执行翻译任务
     return translationTask();
+  }, {
+    priority,
+    cacheKey: translationKey,
   });
 
-  // 任务入表，便于后续复用/清理
-  inFlightTranslations.set(translationKey, translationPromise);
-
-  return translationPromise.finally(() => {
-    inFlightTranslations.delete(translationKey);
-  });
+  return translationPromise;
 }
 
 /**
@@ -153,7 +147,7 @@ export function cancelAllTranslations() {
   if (isDev) {
     console.log('[翻译API] 取消所有等待中的翻译任务');
   }
-  clearTranslationQueue();
+  cancelQueue();
 }
 
 /**
@@ -176,4 +170,6 @@ export interface TranslateOptions {
   timeout?: number;
   /** 是否使用缓存 */
   useCache?: boolean;
+  /** 翻译优先级 */
+  priority?: Priority;
 } 
