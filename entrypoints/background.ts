@@ -1,7 +1,6 @@
-import {_service} from "@/entrypoints/service/_service";
-import {config} from "@/entrypoints/utils/config";
-import {reportTranslationCount} from "@/entrypoints/utils/influx-reporter";
-import {CONTEXT_MENU_IDS} from "@/entrypoints/utils/constant";
+import { _service } from "@/entrypoints/service/_service";
+import { config } from "@/entrypoints/utils/config";
+import { CONTEXT_MENU_IDS } from "@/entrypoints/utils/constant";
 
 // 翻译状态管理
 let translationStateMap = new Map<number, boolean>(); // tabId -> isTranslated
@@ -13,7 +12,7 @@ async function translateWithMicrosoftInBackground(text: string, targetLang: stri
     try {
         // 获取微软翻译的JWT令牌
         const jwtToken = await refreshMicrosoftTokenInBackground();
-        
+
         // 调用微软翻译API
         const response = await fetch(`https://api-edge.cognitive.microsofttranslator.com/translate?from=&to=${targetLang}&api-version=3.0&includeSentenceLength=true&textType=html`, {
             method: 'POST',
@@ -21,7 +20,7 @@ async function translateWithMicrosoftInBackground(text: string, targetLang: stri
                 'Content-Type': 'application/json',
                 'Authorization': 'Bearer ' + jwtToken
             },
-            body: JSON.stringify([{Text: text}])
+            body: JSON.stringify([{ Text: text }])
         });
 
         if (response.ok) {
@@ -99,7 +98,7 @@ export default defineBackground({
         // 监听右键菜单点击事件
         browser.contextMenus.onClicked.addListener((info: any, tab: any) => {
             if (!tab?.id) return;
-            
+
             if (info.menuItemId === CONTEXT_MENU_IDS.TRANSLATE_FULL_PAGE) {
                 // 发送消息到内容脚本触发全文翻译
                 browser.tabs.sendMessage(tab.id, {
@@ -130,14 +129,14 @@ export default defineBackground({
         // 更新右键菜单状态
         const updateContextMenus = (tabId: number) => {
             const isTranslated = translationStateMap.get(tabId) || false;
-            
+
             try {
                 // 更新全文翻译菜单项
                 browser.contextMenus.update(CONTEXT_MENU_IDS.TRANSLATE_FULL_PAGE, {
                     enabled: !isTranslated,
                     title: isTranslated ? '全文翻译 (已翻译)' : '全文翻译'
                 });
-                
+
                 // 更新撤销翻译菜单项
                 browser.contextMenus.update(CONTEXT_MENU_IDS.RESTORE_ORIGINAL, {
                     enabled: isTranslated,
@@ -177,7 +176,7 @@ export default defineBackground({
                         resolve({ success: true, translatedText });
                         return;
                     }
-                    
+
                     // 处理普通翻译请求，增加服务名校验
                     const serviceFn = _service[config.service];
                     if (!serviceFn) {
@@ -192,14 +191,5 @@ export default defineBackground({
                 }
             });
         });
-
-        reportTranslationCount().catch(error => {
-            console.error('init report failed:', error);
-        });
-        setInterval(() => {
-            reportTranslationCount().catch(error => {
-                console.error('report failed:', error);
-            });
-        }, 300000);
     }
 });

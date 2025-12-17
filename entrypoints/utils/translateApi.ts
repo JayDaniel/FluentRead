@@ -65,11 +65,27 @@ export async function translateText(
     timeout = 45000,
     useCache = config.useCache,
     priority = 'normal',
+    forceTranslate = config.alwaysTranslate, // 始终翻译模式
   } = options;
 
-  // 如果目标语言与当前文本语言相同，直接返回原文
-  if (detectlang(origin.replace(/[\s\u3000]/g, '')) === config.to) {
-    return origin;
+  // 1. 空字符检查：如果原文为空或仅包含空白字符，直接返回原文
+  const trimmedOrigin = origin?.trim();
+  if (!trimmedOrigin) {
+    if (isDev) {
+      console.log('[翻译API] 空字符或空白内容，跳过翻译');
+    }
+    return origin ?? '';
+  }
+
+  // 2. 语言检测：如果目标语言与当前文本语言相同，且未开启“始终翻译”，直接返回原文
+  if (!forceTranslate) {
+    const detectedLang = detectlang(origin.replace(/[\s\u3000]/g, ''));
+    if (detectedLang === config.to) {
+      if (isDev) {
+        console.log(`[翻译API] 语言相同 (${detectedLang})，跳过翻译`);
+      }
+      return origin;
+    }
   }
 
   // 检查缓存
@@ -172,4 +188,6 @@ export interface TranslateOptions {
   useCache?: boolean;
   /** 翻译优先级 */
   priority?: Priority;
+  /** 强制翻译（跳过语言检测） */
+  forceTranslate?: boolean;
 } 

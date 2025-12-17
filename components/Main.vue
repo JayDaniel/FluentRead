@@ -454,6 +454,21 @@
           </el-col>
         </el-row>
 
+        <!-- 始终翻译开关 -->
+        <el-row class="margin-bottom margin-left-2em">
+          <el-col :span="20" class="lightblue rounded-corner">
+            <el-tooltip class="box-item" effect="dark" content="开启后将跳过语言检测，始终将内容翻译为目标语言。适用于语言检测不准确或需要翻译与目标语言相同内容的场景。" placement="top-start" :show-after="500">
+        <span class="popup-text popup-vertical-left">始终翻译<el-icon class="icon-margin">
+            <ChatDotRound />
+          </el-icon></span>
+            </el-tooltip>
+          </el-col>
+
+          <el-col :span="4" class="flex-end">
+            <el-switch v-model="config.alwaysTranslate" inline-prompt active-text="启用" inactive-text="禁用"/>
+          </el-col>
+        </el-row>
+
         <!-- 悬浮球开关 -->
       <el-row v-if="config.on" class="margin-bottom margin-left-2em margin-top-1em">
         <el-col :span="20" class="lightblue rounded-corner">
