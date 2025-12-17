@@ -57,3 +57,137 @@
 }
 
 /* 由 .dark 类与变量控制主题，这里不再强制全局颜色 */
+
+/* --- Modern UI Styles --- */
+
+/* 容器基础 */
+.modern-container {
+    padding: 0;
+    /* 外层 el-main 已有 padding，此处去除以避免重复 */
+    max-width: 800px;
+    /* 限制最大宽度，大屏更精致 */
+    margin: 0 auto;
+}
+
+/* 分组卡片 */
+.setting-card {
+    background: var(--fr-bg-color);
+    border-radius: 10px;
+    margin-bottom: 10px;
+    padding: 4px 0;
+    /* 轻微边框代替阴影，更扁平清爽 */
+    border: 1px solid var(--fr-border-color-lighter);
+}
+
+.setting-card:hover {
+    border-color: var(--fr-border-color-light);
+}
+
+
+/* 设置项行布局 */
+.setting-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 14px;
+    min-height: 40px;
+    transition: background-color 0.2s;
+}
+
+.setting-item:hover {
+    background-color: var(--fr-hover-color);
+}
+
+/* 左侧标签区 */
+.setting-label-group {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    flex: 1;
+    margin-right: 16px;
+    text-align: left;
+    /* 强制左对齐 */
+}
+
+.setting-label {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--fr-text-color-primary);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.setting-description {
+    font-size: 12px;
+    color: var(--fr-text-color-regular);
+    margin-top: 4px;
+    line-height: 1.4;
+    opacity: 0.8;
+}
+
+/* 图标样式 */
+.setting-icon {
+    font-size: 16px;
+    color: var(--fr-text-color-regular);
+    display: inline-flex;
+    align-items: center;
+}
+
+/* 右侧控件区 */
+.setting-control {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    flex-shrink: 0;
+}
+
+/* 分组标题 */
+.section-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--fr-text-color-regular);
+    padding: 0 4px 6px 4px;
+    margin-left: 10px;
+    margin-top: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    opacity: 0.8;
+    text-align: left;
+}
+
+
+/* 覆盖 Element Plus 样式以更协调 */
+
+/* 移除 Input/Select 的默认边框，使用更轻盈的风格（可选） */
+/* .el-select .el-input__wrapper {
+    box-shadow: 0 0 0 1px transparent inset !important;
+    background-color: transparent !important;
+}
+.el-select .el-input__wrapper:hover {
+    box-shadow: 0 0 0 1px var(--fr-border-color) inset !important;
+} */
+
+/* 对话框/折叠面板 样式覆写 */
+.modern-collapse {
+    border: none !important;
+    background: transparent !important;
+    --el-collapse-header-bg-color: transparent;
+    --el-collapse-content-bg-color: transparent;
+    --el-collapse-border-color: transparent;
+}
+
+.modern-collapse .el-collapse-item__header {
+    border: none !important;
+    height: auto;
+    background: transparent !important;
+}
+
+.modern-collapse .el-collapse-item__wrap {
+    border: none !important;
+    background: transparent !important;
+}
+
+.modern-collapse .el-collapse-item__content {
+    padding-bottom: 0;
+}
